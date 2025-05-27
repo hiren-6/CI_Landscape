@@ -17,89 +17,105 @@ st.set_page_config(
 # Initialize session state
 if 'assets_data' not in st.session_state:
     st.session_state.assets_data = pd.DataFrame({
-        'Asset': ['Drug A', 'Drug B', 'Drug C', 'Drug D', 'Drug E', 'Drug F'],
-        'Company': ['Pharma Corp', 'BioTech Inc', 'MedCorp', 'HealthCo', 'BioPharma', 'DrugCorp'],
-        'Current_Phase': [25, 45, 70, 35, 85, 60],
-        'MOA': ['Kinase Inhibitor', 'Antibody', 'Small Molecule', 'Kinase Inhibitor', 'Antibody', 'Small Molecule'],
-        'Category': ['Oncology', 'Immunology', 'Oncology', 'Neurology', 'Immunology', 'Cardiology']
+        'Asset': ['DPI-387', 'Cariprazine', 'Lumateperone', 'ILT1011'],
+        'Company': ['Defender Pharma', 'Abbvie', 'Xyz', 'Hôpitaux de Paris/ Iltoo Pharma'],
+        'Current_Phase': [35, 85, 75, 60],
+        'MOA': ['Pan muscarinic antagonist', 'D2 Antagonist', 'Dopamine/Serotonin Modulator', 'Interleukin 2'],
+        'Category': ['Treatment Sensitive Category', 'Treatment Resistant Category', 'Treatment Resistant Category', 'Treatment Resistant Category']
     })
 
 if 'moa_colors' not in st.session_state:
     st.session_state.moa_colors = {
-        'Kinase Inhibitor': '#FF6B6B',
-        'Antibody': '#4ECDC4', 
-        'Small Molecule': '#45B7D1',
-        'Gene Therapy': '#96CEB4',
-        'Cell Therapy': '#FFEAA7',
-        'Protein': '#DDA0DD',
-        'Vaccine': '#98D8C8',
-        'Other': '#F7DC6F'
+        'Pan muscarinic antagonist': '#4472C4',
+        'Selective D3/D2/D3 Modulator': '#E91E63',
+        'Psychedelic': '#F44336',
+        'D2 Antagonist': '#9C27B0',
+        'P2X7 Functional Antagonist': '#9E9E9E',
+        'Interleukin 2': '#FF9800',
+        'NMDA Antagonist': '#2196F3',
+        'Kappa Receptor Antagonist': '#009688',
+        'Dopamine/Serotonin Modulator': '#4CAF50',
+        'Cannabinoid': '#8BC34A',
+        'BDNF': '#00BCD4',
+        'TRB selective agonist': '#424242'
     }
 
-def get_segments_data(data, segment_column):
-    """Get unique segments and their asset counts"""
-    if segment_column in data.columns:
-        segments = data[segment_column].unique()
-        segment_counts = data[segment_column].value_counts()
-        return segments, segment_counts
-    return [], {}
+if 'font_settings' not in st.session_state:
+    st.session_state.font_settings = {
+        'family': 'Arial',
+        'size': 12,
+        'bold': False,
+        'italic': False,
+        'color': '#000000'
+    }
 
-def calculate_position_in_segment(data, segment_column, num_segments=None):
+if 'editable_mode' not in st.session_state:
+    st.session_state.editable_mode = False
+
+def calculate_segment_positions(data, segment_column, max_segments=8):
     """Calculate angular position for each asset within its segment"""
     if segment_column not in data.columns:
-        # Fallback to equal distribution
-        n_assets = len(data)
-        angles = np.linspace(0, 2 * np.pi, n_assets, endpoint=False)
-        return angles
+        return np.linspace(0, 2 * np.pi, len(data), endpoint=False)
     
-    segments, segment_counts = get_segments_data(data, segment_column)
-    
-    if num_segments is None:
-        num_segments = len(segments)
+    segments = data[segment_column].unique()
+    num_segments = min(len(segments), max_segments)
     
     # Calculate angle allocation for each segment
     segment_angle = 2 * np.pi / num_segments
     
     angles = []
-    for i, (_, row) in enumerate(data.iterrows()):
-        segment = row[segment_column]
-        segment_idx = list(segments).index(segment)
-        
-        # Count assets in this segment up to current position
-        segment_data = data[data[segment_column] == segment]
-        asset_idx_in_segment = list(segment_data.index).index(row.name)
-        assets_in_segment = len(segment_data)
-        
-        # Calculate position within segment
-        if assets_in_segment == 1:
-            angle_in_segment = segment_angle / 2
-        else:
-            angle_in_segment = (asset_idx_in_segment * segment_angle) / assets_in_segment
-        
-        # Base angle for segment + position within segment
-        base_angle = segment_idx * segment_angle
-        final_angle = base_angle + angle_in_segment
-        
-        angles.append(final_angle)
+    segment_positions = {}
     
-    return np.array(angles)
+    # Group data by segment
+    for i, segment in enumerate(segments[:num_segments]):
+        segment_data = data[data[segment_column] == segment]
+        base_angle = i * segment_angle
+        
+        # Calculate positions within segment
+        assets_in_segment = len(segment_data)
+        if assets_in_segment == 1:
+            positions = [base_angle + segment_angle / 2]
+        else:
+            # Distribute assets within segment with padding
+            padding = segment_angle * 0.1  # 10% padding on each side
+            available_angle = segment_angle - 2 * padding
+            positions = [base_angle + padding + j * available_angle / (assets_in_segment - 1) 
+                        for j in range(assets_in_segment)]
+        
+        segment_positions[segment] = {
+            'base_angle': base_angle,
+            'end_angle': base_angle + segment_angle,
+            'positions': positions
+        }
+    
+    # Assign angles to each asset
+    for _, row in data.iterrows():
+        segment = row[segment_column]
+        if segment in segment_positions:
+            segment_data = data[data[segment_column] == segment]
+            asset_idx = list(segment_data.index).index(row.name)
+            if asset_idx < len(segment_positions[segment]['positions']):
+                angles.append(segment_positions[segment]['positions'][asset_idx])
+    
+    return np.array(angles), segment_positions
 
-def create_bullseye_radar(data, segment_column='Category', num_segments=None, title="Bulls Eye Radar Chart"):
-    """Create a bulls eye radar chart with segments and asset representation"""
+def create_bullseye_radar_advanced(data, segment_column='Category', max_segments=2, title="Bulls Eye Radar Chart"):
+    """Create advanced bulls eye radar chart matching the reference image"""
     
     # Calculate positions
-    angles = calculate_position_in_segment(data, segment_column, num_segments)
+    angles, segment_info = calculate_segment_positions(data, segment_column, max_segments)
     
     # Create the plotly figure
     fig = go.Figure()
     
-    # Add concentric circles (bulls eye rings)
-    circle_radii = [33, 66, 100]
-    circle_colors = ['rgba(255, 0, 0, 0.1)', 'rgba(255, 165, 0, 0.1)', 'rgba(0, 255, 0, 0.1)']
-    circle_names = ['Phase 1 (0-33%)', 'Phase 2 (34-66%)', 'Phase 3 (67-100%)']
+    # Add concentric circles with labels
+    circle_radii = [25, 50, 75, 100]
+    circle_colors = ['rgba(200, 200, 200, 0.1)', 'rgba(150, 150, 150, 0.1)', 
+                    'rgba(100, 100, 100, 0.1)', 'rgba(50, 50, 50, 0.1)']
+    circle_labels = ['Phase 1', 'Phase 2', 'Phase 3', 'Marketed']
     
-    for i, (radius, color, name) in enumerate(zip(circle_radii, circle_colors, circle_names)):
-        # Create circle coordinates
+    for i, (radius, color, label) in enumerate(zip(circle_radii, circle_colors, circle_labels)):
+        # Create circle
         circle_angles = np.linspace(0, 2 * np.pi, 100)
         circle_r = [radius] * 100
         circle_theta = circle_angles
@@ -108,93 +124,141 @@ def create_bullseye_radar(data, segment_column='Category', num_segments=None, ti
             r=circle_r,
             theta=np.degrees(circle_theta),
             mode='lines',
-            line=dict(color=color.replace('0.1', '0.5'), width=2),
+            line=dict(color='lightgray', width=1),
             fill='toself',
             fillcolor=color,
-            name=name,
-            showlegend=True,
+            name=label,
+            showlegend=False,
             hoverinfo='skip'
         ))
-    
-    # Add segment dividers if using segments
-    if segment_column in data.columns and num_segments:
-        segments, _ = get_segments_data(data, segment_column)
-        segment_angle = 360 / num_segments
         
-        for i in range(num_segments):
-            angle = i * segment_angle
+        # Add circle labels
+        label_angle = np.pi / 4  # 45 degrees
+        label_x = radius * np.cos(label_angle)
+        label_y = radius * np.sin(label_angle)
+        
+        fig.add_annotation(
+            x=label_x,
+            y=label_y,
+            text=label,
+            showarrow=False,
+            font=dict(size=10, color='gray'),
+            bgcolor='rgba(255,255,255,0.7)'
+        )
+    
+    # Add segment dividers
+    if max_segments > 1:
+        segments = list(segment_info.keys())
+        for segment, info in segment_info.items():
+            # Add segment divider lines
+            base_angle = info['base_angle']
+            end_angle = info['end_angle']
+            
+            # Divider line
             fig.add_trace(go.Scatterpolar(
-                r=[0, 100],
-                theta=[angle, angle],
+                r=[0, 120],
+                theta=[np.degrees(base_angle), np.degrees(base_angle)],
                 mode='lines',
-                line=dict(color='gray', width=1, dash='dash'),
+                line=dict(color='gray', width=2),
                 showlegend=False,
                 hoverinfo='skip'
             ))
-    
-    # Group assets by MOA for legend
-    moa_groups = data.groupby('MOA')
-    
-    # Add assets as dots with lines
-    for moa, group in moa_groups:
-        moa_color = st.session_state.moa_colors.get(moa, '#808080')
-        
-        group_angles = []
-        group_radii = []
-        group_labels = []
-        
-        for idx, (_, row) in enumerate(group.iterrows()):
-            asset_angle = angles[data.index.get_loc(row.name)]
-            asset_radius = row['Current_Phase']
             
-            group_angles.append(asset_angle)
-            group_radii.append(asset_radius)
-            group_labels.append(f"{row['Asset']}<br>{row['Company']}")
+            # Segment background
+            segment_angles = np.linspace(base_angle, end_angle, 20)
+            segment_r = [110] * 20
             
-            # Add line from center to asset position
             fig.add_trace(go.Scatterpolar(
-                r=[0, asset_radius],
-                theta=[np.degrees(asset_angle), np.degrees(asset_angle)],
+                r=segment_r,
+                theta=np.degrees(segment_angles),
                 mode='lines',
-                line=dict(color=moa_color, width=2, dash='solid'),
+                line=dict(color='lightblue', width=0),
+                fill='toself',
+                fillcolor='rgba(173, 216, 230, 0.2)',
                 showlegend=False,
                 hoverinfo='skip'
             ))
-        
-        # Add dots for this MOA group
-        fig.add_trace(go.Scatterpolar(
-            r=group_radii,
-            theta=np.degrees(group_angles),
-            mode='markers+text',
-            marker=dict(
-                size=12,
-                color=moa_color,
-                symbol='circle',
-                line=dict(width=2, color='white')
-            ),
-            text=[f"{row['Asset']}<br>{row['Company']}" for _, row in group.iterrows()],
-            textposition='middle right',
-            textfont=dict(size=10, color='black'),
-            name=f'{moa} ({len(group)})',
-            showlegend=True,
-            hovertemplate='<b>%{text}</b><br>Phase: %{r}%<br>MOA: ' + moa + '<extra></extra>'
-        ))
-    
-    # Add segment labels if using segments
-    if segment_column in data.columns and num_segments:
-        segments, segment_counts = get_segments_data(data, segment_column)
-        segment_angle = 2 * np.pi / num_segments
-        
-        for i, segment in enumerate(segments):
-            label_angle = i * segment_angle + segment_angle / 2
-            label_radius = 110  # Outside the chart
+            
+            # Segment label
+            mid_angle = (base_angle + end_angle) / 2
+            label_radius = 130
             
             fig.add_annotation(
-                x=label_radius * np.cos(label_angle - np.pi/2),
-                y=label_radius * np.sin(label_angle - np.pi/2),
-                text=f"<b>{segment}</b><br>({segment_counts[segment]} assets)",
+                x=label_radius * np.cos(mid_angle),
+                y=label_radius * np.sin(mid_angle),
+                text=f"<b>{segment}</b>",
                 showarrow=False,
-                font=dict(size=12, color='black'),
+                font=dict(size=14, color='black'),
+                bgcolor='rgba(173, 216, 230, 0.8)',
+                bordercolor='gray',
+                borderwidth=1
+            )
+    
+    # Add assets as dots with lines extending outside
+    for idx, (_, row) in enumerate(data.iterrows()):
+        if idx < len(angles):
+            angle = angles[idx]
+            radius = row['Current_Phase']
+            moa_color = st.session_state.moa_colors.get(row['MOA'], '#808080')
+            
+            # Line from dot to outside (for label connection)
+            label_radius = 140
+            
+            fig.add_trace(go.Scatterpolar(
+                r=[radius, label_radius],
+                theta=[np.degrees(angle), np.degrees(angle)],
+                mode='lines',
+                line=dict(color='black', width=1),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+            
+            # Asset dot
+            fig.add_trace(go.Scatterpolar(
+                r=[radius],
+                theta=[np.degrees(angle)],
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    color=moa_color,
+                    symbol='circle',
+                    line=dict(width=2, color='white')
+                ),
+                name=row['MOA'],
+                showlegend=False,
+                hovertemplate=f'<b>{row["Asset"]}</b><br>{row["Company"]}<br>Phase: {radius}%<br>MOA: {row["MOA"]}<extra></extra>'
+            ))
+            
+            # Asset label outside circle
+            label_x = label_radius * np.cos(angle)
+            label_y = label_radius * np.sin(angle)
+            
+            # Determine text alignment based on angle
+            if np.cos(angle) > 0:
+                xanchor = 'left'
+            else:
+                xanchor = 'right'
+                
+            if np.sin(angle) > 0:
+                yanchor = 'bottom'
+            else:
+                yanchor = 'top'
+            
+            font_weight = 'bold' if st.session_state.font_settings['bold'] else 'normal'
+            font_style = 'italic' if st.session_state.font_settings['italic'] else 'normal'
+            
+            fig.add_annotation(
+                x=label_x,
+                y=label_y,
+                text=f"<b>{row['Asset']}</b><br>{row['Company']}",
+                showarrow=False,
+                font=dict(
+                    family=st.session_state.font_settings['family'],
+                    size=st.session_state.font_settings['size'],
+                    color=st.session_state.font_settings['color']
+                ),
+                xanchor=xanchor,
+                yanchor=yanchor,
                 bgcolor='rgba(255,255,255,0.8)',
                 bordercolor='gray',
                 borderwidth=1
@@ -204,16 +268,11 @@ def create_bullseye_radar(data, segment_column='Category', num_segments=None, ti
     fig.update_layout(
         polar=dict(
             radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                tickmode='linear',
-                tick0=0,
-                dtick=20,
-                gridcolor='lightgray'
+                visible=False,
+                range=[0, 150]
             ),
             angularaxis=dict(
-                visible=False,  # Hide angular axis as we're using custom labels
-                gridcolor='lightgray'
+                visible=False
             )
         ),
         title=dict(
@@ -221,214 +280,184 @@ def create_bullseye_radar(data, segment_column='Category', num_segments=None, ti
             x=0.5,
             font=dict(size=20)
         ),
-        showlegend=True,
-        legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.02,
-            title="Mechanism of Action"
-        ),
-        width=900,
-        height=700,
-        margin=dict(l=50, r=150, t=80, b=50)
+        showlegend=False,
+        width=800,
+        height=800,
+        margin=dict(l=100, r=100, t=100, b=100),
+        plot_bgcolor='white',
+        paper_bgcolor='white'
     )
     
     return fig
 
-def create_progress_comparison(data):
-    """Create a comparison chart showing progress by category and MOA"""
+def create_moa_legend():
+    """Create MOA legend"""
+    moa_data = []
+    for moa, color in st.session_state.moa_colors.items():
+        count = len(st.session_state.assets_data[st.session_state.assets_data['MOA'] == moa]) if 'MOA' in st.session_state.assets_data.columns else 0
+        if count > 0:
+            moa_data.append({'MOA': moa, 'Color': color, 'Count': count})
     
-    fig = make_subplots(
-        rows=2, cols=1,
-        subplot_titles=('Progress by Category', 'Progress by Mechanism of Action'),
-        vertical_spacing=0.15
+    return pd.DataFrame(moa_data)
+
+# Sidebar Navigation
+with st.sidebar:
+    st.title("🎯 Bulls Eye Radar")
+    
+    # Clean navigation with icons
+    page = st.radio(
+        "Navigation",
+        options=["📊 Dashboard", "✏️ Edit Data", "📁 Upload Data"],
+        label_visibility="collapsed"
     )
     
-    # Progress by Category
-    if 'Category' in data.columns:
-        category_avg = data.groupby('Category')['Current_Phase'].mean().sort_values(ascending=True)
+    # Extract page name
+    if "Dashboard" in page:
+        current_page = "Dashboard"
+    elif "Edit Data" in page:
+        current_page = "Edit Data"
+    else:
+        current_page = "Upload Data"
+
+# Main content based on page selection
+if current_page == "Dashboard":
+    # Main dashboard with only the chart
+    st.title("Asset Development Portfolio")
+    
+    # Chart controls in expandable sections
+    with st.expander("🎨 Chart Settings", expanded=False):
+        col1, col2, col3 = st.columns(3)
         
-        fig.add_trace(
-            go.Bar(
-                x=category_avg.values,
-                y=category_avg.index,
-                orientation='h',
-                name='Category Progress',
-                marker_color='lightblue',
-                showlegend=False
-            ),
-            row=1, col=1
-        )
-    
-    # Progress by MOA
-    if 'MOA' in data.columns:
-        moa_avg = data.groupby('MOA')['Current_Phase'].mean().sort_values(ascending=True)
-        moa_colors = [st.session_state.moa_colors.get(moa, '#808080') for moa in moa_avg.index]
+        with col1:
+            st.subheader("Segments")
+            segment_column = st.selectbox("Segment By:", ['Category', 'Company', 'MOA'], index=0)
+            max_segments = st.slider("Max Segments:", 2, 8, 2)
         
-        fig.add_trace(
-            go.Bar(
-                x=moa_avg.values,
-                y=moa_avg.index,
-                orientation='h',
-                name='MOA Progress',
-                marker_color=moa_colors,
-                showlegend=False
-            ),
-            row=2, col=1
-        )
-    
-    fig.update_xaxes(title_text="Average Progress (%)", row=1, col=1)
-    fig.update_xaxes(title_text="Average Progress (%)", row=2, col=1)
-    fig.update_layout(height=600, title_text="Asset Progress Analysis")
-    
-    return fig
-
-# App title
-st.title("🎯 Bulls Eye Radar Chart for Asset Progress")
-st.markdown("Track and visualize pharmaceutical assets across development phases with company information and mechanism-based coloring.")
-
-# Sidebar for navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Select Page", ["Dashboard", "Edit Data", "Upload CSV", "Settings"])
-
-if page == "Dashboard":
-    st.header("Asset Progress Dashboard")
-    
-    # Segmentation controls
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    with col1:
-        segment_column = st.selectbox(
-            "Segment Assets By:",
-            options=['Category', 'Company', 'MOA', 'None'],
-            index=0
-        )
-    
-    with col2:
-        if segment_column != 'None':
-            segments, _ = get_segments_data(st.session_state.assets_data, segment_column)
-            max_segments = len(segments)
-            num_segments = st.number_input(
-                "Number of Segments:",
-                min_value=2,
-                max_value=max_segments,
-                value=min(max_segments, 3)
+        with col2:
+            st.subheader("Font Settings")
+            st.session_state.font_settings['family'] = st.selectbox(
+                "Font Family:", 
+                ['Arial', 'Times New Roman', 'Helvetica', 'Georgia', 'Courier New'],
+                index=0
             )
-        else:
-            num_segments = None
+            st.session_state.font_settings['size'] = st.slider("Font Size:", 8, 20, 12)
+            
+            col2a, col2b = st.columns(2)
+            with col2a:
+                st.session_state.font_settings['bold'] = st.checkbox("Bold")
+            with col2b:
+                st.session_state.font_settings['italic'] = st.checkbox("Italic")
+            
+            st.session_state.font_settings['color'] = st.color_picker("Font Color:", "#000000")
+        
+        with col3:
+            st.subheader("MOA Colors")
+            current_moas = st.session_state.assets_data['MOA'].unique() if 'MOA' in st.session_state.assets_data.columns else []
+            
+            for moa in current_moas:
+                if moa in st.session_state.moa_colors:
+                    new_color = st.color_picker(
+                        f"{moa[:20]}...", 
+                        st.session_state.moa_colors[moa],
+                        key=f"color_{moa}"
+                    )
+                    st.session_state.moa_colors[moa] = new_color
     
-    with col3:
-        show_labels = st.checkbox("Show Asset Labels", value=True)
-    
-    # Display current data
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("Current Asset Data")
-        st.dataframe(st.session_state.assets_data, use_container_width=True)
-    
-    with col2:
-        st.subheader("Summary by MOA")
-        if 'MOA' in st.session_state.assets_data.columns:
-            moa_summary = st.session_state.assets_data.groupby('MOA').agg({
-                'Current_Phase': ['count', 'mean'],
-                'Category': lambda x: ', '.join(x.unique())
-            }).round(1)
-            moa_summary.columns = ['Count', 'Avg Progress', 'Categories']
-            st.dataframe(moa_summary, use_container_width=True)
-    
-    # Create and display bulls eye radar chart
-    st.subheader("Bulls Eye Radar Chart")
-    
-    segment_col = segment_column if segment_column != 'None' else 'Category'
-    radar_fig = create_bullseye_radar(
-        st.session_state.assets_data, 
-        segment_column=segment_col,
-        num_segments=num_segments,
-        title="Asset Development Progress - Bulls Eye View"
+    # Main chart
+    radar_fig = create_bullseye_radar_advanced(
+        st.session_state.assets_data,
+        segment_column=segment_column,
+        max_segments=max_segments,
+        title=""
     )
     st.plotly_chart(radar_fig, use_container_width=True)
     
-    # Progress comparison chart
-    st.subheader("Progress Analysis")
-    comparison_fig = create_progress_comparison(st.session_state.assets_data)
-    st.plotly_chart(comparison_fig, use_container_width=True)
-    
-    # Legend explanation
-    st.subheader("Chart Legend & Interpretation")
-    
+    # MOA Legend
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.markdown("**📍 Chart Elements:**")
-        st.markdown("""
-        - **🔴 Inner Circle (0-33%)**: Early development phase
-        - **🟠 Middle Circle (34-66%)**: Mid-stage development  
-        - **🟢 Outer Circle (67-100%)**: Late-stage/market ready
-        - **Lines**: Connect center to asset position
-        - **Dots**: Asset position colored by MOA
-        - **Labels**: Show asset and company name
-        """)
+        st.subheader("Mechanism of Action")
+        moa_legend = create_moa_legend()
+        if not moa_legend.empty:
+            for _, row in moa_legend.iterrows():
+                st.markdown(
+                    f'<span style="color: {row["Color"]}; font-size: 20px;">●</span> {row["MOA"]} ({row["Count"]})',
+                    unsafe_allow_html=True
+                )
     
     with col2:
-        st.markdown("**🎨 MOA Color Coding:**")
-        for moa, color in st.session_state.moa_colors.items():
-            if moa in st.session_state.assets_data['MOA'].values:
-                count = len(st.session_state.assets_data[st.session_state.assets_data['MOA'] == moa])
-                st.markdown(f'<span style="color: {color};">●</span> **{moa}** ({count} assets)', unsafe_allow_html=True)
+        st.subheader("Trial Status")
+        st.markdown("🚀 **Advanced to next Phase of development**")
+        st.markdown("❓ **Status Unknown**")
 
-elif page == "Edit Data":
-    st.header("Edit Asset Data")
-    st.markdown("Modify asset information including names, companies, phases, MOA, and categories.")
+elif current_page == "Edit Data":
+    st.title("Edit Asset Data")
+    
+    # Direct editing mode toggle
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("Modify asset information and properties")
+    with col2:
+        st.session_state.editable_mode = st.toggle("Chart Edit Mode", st.session_state.editable_mode)
+    
+    if st.session_state.editable_mode:
+        st.info("💡 Chart Edit Mode: Click on asset labels in the chart to edit names directly")
+        
+        # Show chart with editable elements
+        radar_fig = create_bullseye_radar_advanced(st.session_state.assets_data, title="Click labels to edit")
+        st.plotly_chart(radar_fig, use_container_width=True)
     
     # Data editor
+    st.subheader("Data Table Editor")
     edited_data = st.data_editor(
         st.session_state.assets_data,
         num_rows="dynamic",
         use_container_width=True,
+        key="data_editor",
         column_config={
-            "Asset": st.column_config.TextColumn("Asset Name", required=True),
-            "Company": st.column_config.TextColumn("Company Name", required=True),
+            "Asset": st.column_config.TextColumn("Asset Name", required=True, width="medium"),
+            "Company": st.column_config.TextColumn("Company Name", required=True, width="large"),
             "Current_Phase": st.column_config.NumberColumn(
                 "Current Phase (%)", 
                 min_value=0, 
                 max_value=100, 
                 step=1,
-                required=True
+                required=True,
+                width="small"
             ),
             "MOA": st.column_config.SelectboxColumn(
                 "Mechanism of Action",
                 options=list(st.session_state.moa_colors.keys()),
-                required=True
+                required=True,
+                width="large"
             ),
-            "Category": st.column_config.TextColumn("Category", required=True),
+            "Category": st.column_config.TextColumn("Category", required=True, width="medium"),
         }
     )
     
-    col1, col2, col3 = st.columns([1, 1, 1])
+    # Action buttons
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
     
     with col1:
-        if st.button("💾 Save Changes", type="primary"):
+        if st.button("💾 Save Changes", type="primary", use_container_width=True):
             st.session_state.assets_data = edited_data
-            st.success("Data saved successfully!")
+            st.success("✅ Changes saved!")
             st.rerun()
     
     with col2:
-        if st.button("🔄 Reset to Default"):
+        if st.button("🔄 Reset Default", use_container_width=True):
             st.session_state.assets_data = pd.DataFrame({
-                'Asset': ['Drug A', 'Drug B', 'Drug C', 'Drug D', 'Drug E', 'Drug F'],
-                'Company': ['Pharma Corp', 'BioTech Inc', 'MedCorp', 'HealthCo', 'BioPharma', 'DrugCorp'],
-                'Current_Phase': [25, 45, 70, 35, 85, 60],
-                'MOA': ['Kinase Inhibitor', 'Antibody', 'Small Molecule', 'Kinase Inhibitor', 'Antibody', 'Small Molecule'],
-                'Category': ['Oncology', 'Immunology', 'Oncology', 'Neurology', 'Immunology', 'Cardiology']
+                'Asset': ['DPI-387', 'Cariprazine', 'Lumateperone', 'ILT1011'],
+                'Company': ['Defender Pharma', 'Abbvie', 'Xyz', 'Hôpitaux de Paris/ Iltoo Pharma'],
+                'Current_Phase': [35, 85, 75, 60],
+                'MOA': ['Pan muscarinic antagonist', 'D2 Antagonist', 'Dopamine/Serotonin Modulator', 'Interleukin 2'],
+                'Category': ['Treatment Sensitive Category', 'Treatment Resistant Category', 'Treatment Resistant Category', 'Treatment Resistant Category']
             })
-            st.success("Data reset to default values!")
+            st.success("✅ Reset to defaults!")
             st.rerun()
     
     with col3:
-        # Download current data as CSV
+        # Download current data
         csv_buffer = io.StringIO()
         st.session_state.assets_data.to_csv(csv_buffer, index=False)
         csv_data = csv_buffer.getvalue()
@@ -436,175 +465,100 @@ elif page == "Edit Data":
         st.download_button(
             label="📥 Download CSV",
             data=csv_data,
-            file_name="asset_progress_data.csv",
-            mime="text/csv"
+            file_name="asset_data.csv",
+            mime="text/csv",
+            use_container_width=True
         )
     
-    # Preview of changes
-    if not edited_data.equals(st.session_state.assets_data):
-        st.subheader("Preview of Changes")
-        st.info("Click 'Save Changes' to apply the modifications.")
-        preview_fig = create_bullseye_radar(edited_data, title="Preview - Bulls Eye Radar Chart")
-        st.plotly_chart(preview_fig, use_container_width=True)
+    with col4:
+        if st.button("👀 Preview", use_container_width=True):
+            if not edited_data.equals(st.session_state.assets_data):
+                st.info("📊 Preview of changes:")
+                preview_fig = create_bullseye_radar_advanced(edited_data, title="Preview")
+                st.plotly_chart(preview_fig, use_container_width=True)
 
-elif page == "Upload CSV":
-    st.header("Upload CSV Data")
-    st.markdown("Upload a CSV file with asset progress data in the required format.")
+elif current_page == "Upload Data":
+    st.title("Upload CSV Data")
     
-    # Show required format
-    st.subheader("Required CSV Format")
-    required_format = pd.DataFrame({
-        'Asset': ['Drug Example', 'Compound X'],
-        'Company': ['Big Pharma', 'Startup Bio'],
-        'Current_Phase': [45, 75],
-        'MOA': ['Kinase Inhibitor', 'Antibody'],
-        'Category': ['Oncology', 'Immunology']
-    })
-    st.dataframe(required_format, use_container_width=True)
+    # Required format
+    col1, col2 = st.columns([1.5, 1])
     
-    # File uploader
-    uploaded_file = st.file_uploader(
-        "Choose a CSV file",
-        type="csv",
-        help="CSV should have columns: Asset, Company, Current_Phase, MOA, Category"
-    )
+    with col1:
+        st.subheader("📋 Required CSV Format")
+        sample_data = pd.DataFrame({
+            'Asset': ['DPI-387', 'Cariprazine'],
+            'Company': ['Defender Pharma', 'Abbvie'],  
+            'Current_Phase': [35, 85],
+            'MOA': ['Pan muscarinic antagonist', 'D2 Antagonist'],
+            'Category': ['Treatment Sensitive', 'Treatment Resistant']
+        })
+        st.dataframe(sample_data, use_container_width=True)
+        
+        # Download template
+        template_csv = sample_data.to_csv(index=False)
+        st.download_button(
+            "📥 Download Template",
+            template_csv,
+            "template.csv",
+            "text/csv"
+        )
+    
+    with col2:
+        st.subheader("📤 Upload File")
+        uploaded_file = st.file_uploader(
+            "Choose CSV file",
+            type="csv",
+            help="Upload CSV with Asset, Company, Current_Phase, MOA, Category columns"
+        )
     
     if uploaded_file is not None:
         try:
-            # Read the CSV
             uploaded_data = pd.read_csv(uploaded_file)
             
-            st.subheader("Uploaded Data Preview")
+            st.subheader("📊 Uploaded Data Preview")
             st.dataframe(uploaded_data, use_container_width=True)
             
-            # Validate required columns
-            required_columns = ['Asset', 'Company', 'Current_Phase', 'MOA', 'Category']
-            missing_columns = [col for col in required_columns if col not in uploaded_data.columns]
+            # Validation
+            required_cols = ['Asset', 'Company', 'Current_Phase', 'MOA', 'Category']
+            missing_cols = [col for col in required_cols if col not in uploaded_data.columns]
             
-            if missing_columns:
-                st.error(f"Missing required columns: {', '.join(missing_columns)}")
-                st.info("Required columns: Asset, Company, Current_Phase, MOA, Category")
+            if missing_cols:
+                st.error(f"❌ Missing columns: {', '.join(missing_cols)}")
             else:
-                # Data validation
+                # Data cleaning
                 uploaded_data['Current_Phase'] = pd.to_numeric(uploaded_data['Current_Phase'], errors='coerce')
-                
-                # Check for invalid values
-                if uploaded_data['Current_Phase'].isnull().any():
-                    st.warning("Some non-numeric values found in Current_Phase column. They will be treated as 0.")
-                    uploaded_data['Current_Phase'] = uploaded_data['Current_Phase'].fillna(0)
-                
-                # Clamp values between 0 and 100
-                uploaded_data['Current_Phase'] = uploaded_data['Current_Phase'].clip(0, 100)
+                uploaded_data['Current_Phase'] = uploaded_data['Current_Phase'].fillna(0).clip(0, 100)
                 
                 # Update MOA colors for new MOAs
                 new_moas = set(uploaded_data['MOA'].unique()) - set(st.session_state.moa_colors.keys())
-                default_colors = ['#FF9999', '#99FF99', '#9999FF', '#FFFF99', '#FF99FF', '#99FFFF']
+                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
                 for i, moa in enumerate(new_moas):
-                    if i < len(default_colors):
-                        st.session_state.moa_colors[moa] = default_colors[i]
-                    else:
-                        st.session_state.moa_colors[moa] = '#808080'
+                    st.session_state.moa_colors[moa] = colors[i % len(colors)]
                 
-                col1, col2 = st.columns([1, 1])
+                # Preview chart
+                st.subheader("📈 Preview Chart")
+                preview_fig = create_bullseye_radar_advanced(uploaded_data, title="Data Preview")
+                st.plotly_chart(preview_fig, use_container_width=True)
                 
+                # Action buttons
+                col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("📊 Use This Data", type="primary"):
+                    if st.button("✅ Use This Data", type="primary", use_container_width=True):
                         st.session_state.assets_data = uploaded_data
-                        st.success("Data uploaded and applied successfully!")
+                        st.success("🎉 Data uploaded successfully!")
                         st.balloons()
+                        st.rerun()
                 
                 with col2:
-                    if st.button("👁️ Preview Only"):
-                        st.info("Showing preview without saving changes.")
-                
-                # Show charts for uploaded data
-                st.subheader("Bulls Eye Radar Chart from Uploaded Data")
-                uploaded_fig = create_bullseye_radar(uploaded_data, title="Uploaded Data - Bulls Eye Radar")
-                st.plotly_chart(uploaded_fig, use_container_width=True)
-                
-                # Progress comparison
-                st.subheader("Progress Analysis from Uploaded Data")
-                uploaded_comparison = create_progress_comparison(uploaded_data)
-                st.plotly_chart(uploaded_comparison, use_container_width=True)
-                
+                    if st.button("❌ Cancel", use_container_width=True):
+                        st.rerun()
+                        
         except Exception as e:
-            st.error(f"Error reading CSV file: {str(e)}")
-            st.info("Please ensure your CSV file is properly formatted.")
-    
-    else:
-        # Download sample CSV
-        sample_csv = required_format.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Sample CSV Template",
-            data=sample_csv,
-            file_name="sample_asset_data.csv",
-            mime="text/csv"
-        )
-
-elif page == "Settings":
-    st.header("Settings & Customization")
-    
-    # MOA Color Settings
-    st.subheader("🎨 Mechanism of Action Colors")
-    st.markdown("Customize colors for different mechanisms of action:")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        # Current MOAs in data
-        current_moas = st.session_state.assets_data['MOA'].unique() if 'MOA' in st.session_state.assets_data.columns else []
-        
-        for moa in current_moas:
-            current_color = st.session_state.moa_colors.get(moa, '#808080')
-            new_color = st.color_picker(f"{moa}", current_color, key=f"color_{moa}")
-            st.session_state.moa_colors[moa] = new_color
-    
-    with col2:
-        # Add new MOA
-        st.markdown("**Add New MOA:**")
-        new_moa = st.text_input("MOA Name:")
-        new_moa_color = st.color_picker("MOA Color:", "#808080")
-        
-        if st.button("Add MOA") and new_moa:
-            st.session_state.moa_colors[new_moa] = new_moa_color
-            st.success(f"Added {new_moa} with color {new_moa_color}")
-            st.rerun()
-    
-    # Display all available MOAs
-    st.subheader("All Available MOAs")
-    moa_df = pd.DataFrame([
-        {"MOA": moa, "Color": color, "In_Current_Data": moa in current_moas}
-        for moa, color in st.session_state.moa_colors.items()
-    ])
-    
-    st.dataframe(
-        moa_df,
-        use_container_width=True,
-        column_config={
-            "Color": st.column_config.ColorColumn("Color"),
-            "In_Current_Data": st.column_config.CheckboxColumn("Used in Data")
-        }
-    )
-    
-    # Reset colors
-    if st.button("🔄 Reset to Default Colors"):
-        st.session_state.moa_colors = {
-            'Kinase Inhibitor': '#FF6B6B',
-            'Antibody': '#4ECDC4', 
-            'Small Molecule': '#45B7D1',
-            'Gene Therapy': '#96CEB4',
-            'Cell Therapy': '#FFEAA7',
-            'Protein': '#DDA0DD',
-            'Vaccine': '#98D8C8',
-            'Other': '#F7DC6F'
-        }
-        st.success("Colors reset to defaults!")
-        st.rerun()
+            st.error(f"❌ Error reading file: {str(e)}")
 
 # Footer
 st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: gray;'>
-    Built with Streamlit 🚀 | Bulls Eye Radar Chart for Pharmaceutical Asset Portfolio Management
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    "<div style='text-align: center; color: gray; font-size: 12px;'>Built with Streamlit | Bulls Eye Asset Portfolio Visualization</div>",
+    unsafe_allow_html=True
+)
