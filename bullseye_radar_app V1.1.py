@@ -70,10 +70,10 @@ if 'font_settings_category' not in st.session_state:
 
 if 'circle_settings' not in st.session_state:
     st.session_state.circle_settings = {
-        'Phase 1': {'color': 'rgba(230,230,230,0.3)', 'shadow': False},
-        'Phase 2': {'color': 'rgba(200,200,200,0.3)', 'shadow': False},
-        'Phase 3': {'color': 'rgba(170,170,170,0.3)', 'shadow': False},
-        'Marketed': {'color': 'rgba(140,140,140,0.3)', 'shadow': False}
+        'Phase 1': {'color': '#E6E6E6', 'shadow': False},
+        'Phase 2': {'color': '#C8C8C8', 'shadow': False},
+        'Phase 3': {'color': '#AAAAAA', 'shadow': False},
+        'Marketed': {'color': '#8C8C8C', 'shadow': False}
     }
 
 if 'asset_view' not in st.session_state:
@@ -223,7 +223,7 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2):
                 text-align: center;
                 padding: 10px;
                 font: 12px sans-serif;
-                background: rgba(0, 0, 0, 0.8);
+                background: white;
                 color: white;
                 border: 0px;
                 border-radius: 8px;
