@@ -109,23 +109,37 @@ def calculate_segment_positions(data, segment_column, max_segments=8):
     
     return np.array(angles), segment_positions
 
-def create_bullseye_radar_advanced(data, segment_column='Category', max_segments=2, title="Bulls Eye Radar Chart"):
-    """Create advanced bulls eye radar chart matching the reference image"""
+def create_moa_legend():
+    """Create MOA legend"""
+    moa_data = []
+    for moa, color in st.session_state.moa_colors.items():
+        count = len(st.session_state.assets_data[st.session_state.assets_data['MOA'] == moa]) if 'MOA' in st.session_state.assets_data.columns else 0
+        if count > 0:
+            moa_data.append({'MOA': moa, 'Color': color, 'Count': count})
     
-    # Calculate positions
+    return pd.DataFrame(moa_data)
+
+def create_combined_chart_with_legend(data, segment_column='Category', max_segments=2):
+    """Create combined chart with legend on the right side and permanent asset labels"""
+    
+    # Create subplot with custom spacing - radar chart on left, legend on right
+    fig = make_subplots(
+        rows=1, cols=2,
+        column_widths=[0.75, 0.25],  # More space for radar chart
+        subplot_titles=('', ''),
+        specs=[[{"type": "polar"}, {"type": "xy"}]]
+    )
+    
+    # Create the radar chart
     angles, segment_info = calculate_segment_positions(data, segment_column, max_segments)
     
-    # Create the plotly figure
-    fig = go.Figure()
-    
-    # Add concentric circles with labels
+    # Add concentric circles with improved styling
     circle_radii = [25, 50, 75, 100]
-    circle_colors = ['rgba(200, 200, 200, 0.15)', 'rgba(150, 150, 150, 0.15)', 
-                    'rgba(100, 100, 100, 0.15)', 'rgba(50, 50, 50, 0.15)']
+    circle_colors = ['rgba(230, 230, 230, 0.3)', 'rgba(200, 200, 200, 0.3)', 
+                    'rgba(170, 170, 170, 0.3)', 'rgba(140, 140, 140, 0.3)']
     circle_labels = ['Phase 1', 'Phase 2', 'Phase 3', 'Marketed']
     
     for i, (radius, color, label) in enumerate(zip(circle_radii, circle_colors, circle_labels)):
-        # Create circle
         circle_angles = np.linspace(0, 2 * np.pi, 100)
         circle_r = [radius] * 100
         circle_theta = circle_angles
@@ -137,31 +151,31 @@ def create_bullseye_radar_advanced(data, segment_column='Category', max_segments
             line=dict(color='lightgray', width=1),
             fill='toself',
             fillcolor=color,
-            name=label,
             showlegend=False,
             hoverinfo='skip'
-        ))
-        
-        # Add circle labels at bottom
-        label_angle = -np.pi / 2  # Bottom position
+        ), row=1, col=1)
+    
+    # Add phase labels at the bottom center of each ring
+    for i, (radius, label) in enumerate(zip(circle_radii, circle_labels)):
         fig.add_annotation(
             x=0,
             y=-radius - 8,
             text=label,
             showarrow=False,
             font=dict(size=10, color='gray'),
-            bgcolor='rgba(255,255,255,0.8)',
+            bgcolor='rgba(255,255,255,0.9)',
+            bordercolor='lightgray',
+            borderwidth=1,
             xref="x",
             yref="y"
         )
     
-    # Add segment dividers (only within the outer circle)
+    # Add segment dividers and labels
     if max_segments > 1:
-        segments = list(segment_info.keys())
         for segment, info in segment_info.items():
             base_angle = info['base_angle']
             
-            # Divider line (only from center to outer circle)
+            # Vertical divider line
             fig.add_trace(go.Scatterpolar(
                 r=[0, 100],
                 theta=[np.degrees(base_angle), np.degrees(base_angle)],
@@ -169,18 +183,18 @@ def create_bullseye_radar_advanced(data, segment_column='Category', max_segments
                 line=dict(color='gray', width=2),
                 showlegend=False,
                 hoverinfo='skip'
-            ))
+            ), row=1, col=1)
             
-            # Segment label at the top of outer circle
+            # Segment label at the top
             mid_angle = (base_angle + info['end_angle']) / 2
-            label_radius = 85
+            label_radius = 110
             
             fig.add_annotation(
                 x=label_radius * np.cos(mid_angle),
                 y=label_radius * np.sin(mid_angle),
                 text=f"<b>{segment}</b>",
                 showarrow=False,
-                font=dict(size=12, color='black'),
+                font=dict(size=12, color='black', family='Arial'),
                 bgcolor='rgba(173, 216, 230, 0.9)',
                 bordercolor='gray',
                 borderwidth=1,
@@ -188,15 +202,15 @@ def create_bullseye_radar_advanced(data, segment_column='Category', max_segments
                 yref="y"
             )
     
-    # Add assets as dots with lines and labels
+    # Add assets with permanent labels
     for idx, (_, row) in enumerate(data.iterrows()):
         if idx < len(angles):
             angle = angles[idx]
             radius = phase_to_radius(row['Phase_Status'])
             moa_color = st.session_state.moa_colors.get(row['MOA'], '#808080')
             
-            # Line from dot to outside (for label connection)
-            label_radius = 130
+            # Line from dot to label (extended further out)
+            label_radius = 140
             
             fig.add_trace(go.Scatterpolar(
                 r=[radius, label_radius],
@@ -205,7 +219,7 @@ def create_bullseye_radar_advanced(data, segment_column='Category', max_segments
                 line=dict(color='black', width=1),
                 showlegend=False,
                 hoverinfo='skip'
-            ))
+            ), row=1, col=1)
             
             # Asset dot
             fig.add_trace(go.Scatterpolar(
@@ -218,12 +232,11 @@ def create_bullseye_radar_advanced(data, segment_column='Category', max_segments
                     symbol='circle',
                     line=dict(width=2, color='white')
                 ),
-                name=row['MOA'],
                 showlegend=False,
                 hovertemplate=f'<b>{row["Asset"]}</b><br>{row["Company"]}<br>Phase: {row["Phase_Status"]}<br>MOA: {row["MOA"]}<extra></extra>'
-            ))
+            ), row=1, col=1)
             
-            # Asset label outside circle
+            # Permanent asset label outside circle
             label_x = label_radius * np.cos(angle)
             label_y = label_radius * np.sin(angle)
             
@@ -238,11 +251,11 @@ def create_bullseye_radar_advanced(data, segment_column='Category', max_segments
             else:
                 yanchor = 'top'
             
-            # Add asset name and company as annotation
+            # Add permanent asset name and company label
             fig.add_annotation(
                 x=label_x,
                 y=label_y,
-                text=f"<b>{row['Asset']}</b><br>{row['Company']}",
+                text=f"<b>{row['Asset']}</b><br><span style='font-size:10px'>{row['Company']}</span>",
                 showarrow=False,
                 font=dict(
                     family=st.session_state.font_settings['family'],
@@ -258,165 +271,36 @@ def create_bullseye_radar_advanced(data, segment_column='Category', max_segments
                 yref="y"
             )
     
-    # Update layout to remove zoom and pan
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=False,
-                range=[0, 150]
-            ),
-            angularaxis=dict(
-                visible=False
-            )
-        ),
-        title=dict(
-            text=title,
-            x=0.5,
-            font=dict(size=20)
-        ),
-        showlegend=False,
-        width=800,
-        height=600,
-        margin=dict(l=50, r=50, t=50, b=50),
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        dragmode=False  # Disable drag/zoom
-    )
-    
-    # Disable zoom, pan, select, etc.
-    config = {
-        'displayModeBar': False,
-        'staticPlot': False,
-        'scrollZoom': False,
-        'doubleClick': False,
-        'showTips': False,
-        'displaylogo': False,
-        'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d']
-    }
-    
-    return fig, config
-
-def create_moa_legend():
-    """Create MOA legend"""
-    moa_data = []
-    for moa, color in st.session_state.moa_colors.items():
-        count = len(st.session_state.assets_data[st.session_state.assets_data['MOA'] == moa]) if 'MOA' in st.session_state.assets_data.columns else 0
-        if count > 0:
-            moa_data.append({'MOA': moa, 'Color': color, 'Count': count})
-    
-    return pd.DataFrame(moa_data)
-
-def create_combined_chart_with_legend(data, segment_column='Category', max_segments=2):
-    """Create combined chart with legend on the left side"""
-    
-    # Create subplot with custom spacing
-    fig = make_subplots(
-        rows=1, cols=2,
-        column_widths=[0.25, 0.75],
-        subplot_titles=('', ''),
-        specs=[[{"type": "xy"}, {"type": "polar"}]]
-    )
-    
-    # Create the radar chart
-    angles, segment_info = calculate_segment_positions(data, segment_column, max_segments)
-    
-    # Add concentric circles
-    circle_radii = [25, 50, 75, 100]
-    circle_colors = ['rgba(200, 200, 200, 0.15)', 'rgba(150, 150, 150, 0.15)', 
-                    'rgba(100, 100, 100, 0.15)', 'rgba(50, 50, 50, 0.15)']
-    circle_labels = ['Phase 1', 'Phase 2', 'Phase 3', 'Marketed']
-    
-    for i, (radius, color, label) in enumerate(zip(circle_radii, circle_colors, circle_labels)):
-        circle_angles = np.linspace(0, 2 * np.pi, 100)
-        circle_r = [radius] * 100
-        circle_theta = circle_angles
-        
-        fig.add_trace(go.Scatterpolar(
-            r=circle_r,
-            theta=np.degrees(circle_theta),
-            mode='lines',
-            line=dict(color='lightgray', width=1),
-            fill='toself',
-            fillcolor=color,
-            showlegend=False,
-            hoverinfo='skip'
-        ), row=1, col=2)
-    
-    # Add segment dividers
-    if max_segments > 1:
-        for segment, info in segment_info.items():
-            base_angle = info['base_angle']
-            
-            fig.add_trace(go.Scatterpolar(
-                r=[0, 100],
-                theta=[np.degrees(base_angle), np.degrees(base_angle)],
-                mode='lines',
-                line=dict(color='gray', width=2),
-                showlegend=False,
-                hoverinfo='skip'
-            ), row=1, col=2)
-    
-    # Add assets
-    for idx, (_, row) in enumerate(data.iterrows()):
-        if idx < len(angles):
-            angle = angles[idx]
-            radius = phase_to_radius(row['Phase_Status'])
-            moa_color = st.session_state.moa_colors.get(row['MOA'], '#808080')
-            
-            # Line to label
-            label_radius = 130
-            fig.add_trace(go.Scatterpolar(
-                r=[radius, label_radius],
-                theta=[np.degrees(angle), np.degrees(angle)],
-                mode='lines',
-                line=dict(color='black', width=1),
-                showlegend=False,
-                hoverinfo='skip'
-            ), row=1, col=2)
-            
-            # Asset dot
-            fig.add_trace(go.Scatterpolar(
-                r=[radius],
-                theta=[np.degrees(angle)],
-                mode='markers',
-                marker=dict(
-                    size=12,
-                    color=moa_color,
-                    symbol='circle',
-                    line=dict(width=2, color='white')
-                ),
-                showlegend=False,
-                hovertemplate=f'<b>{row["Asset"]}</b><br>{row["Company"]}<br>Phase: {row["Phase_Status"]}<br>MOA: {row["MOA"]}<extra></extra>'
-            ), row=1, col=2)
-    
-    # Add MOA Legend on the left
+    # Add MOA Legend on the right side
     moa_legend = create_moa_legend()
-    y_pos = 0.9
+    y_pos = 0.95
     
     # Legend title
     fig.add_annotation(
-        x=0.12, y=0.95,
+        x=0.85, y=0.98,
         text="<b>Mechanism of Action</b>",
         showarrow=False,
-        font=dict(size=14, color='black'),
+        font=dict(size=14, color='black', family='Arial'),
         xref="paper", yref="paper"
     )
     
-    # MOA items
+    # MOA legend items
     for _, row in moa_legend.iterrows():
+        # Color dot
         fig.add_trace(go.Scatter(
-            x=[0.02], y=[y_pos],
+            x=[0.77], y=[y_pos - 0.05],
             mode='markers',
-            marker=dict(size=15, color=row['Color'], symbol='circle'),
+            marker=dict(size=12, color=row['Color'], symbol='circle', line=dict(width=1, color='gray')),
             showlegend=False,
             hoverinfo='skip'
-        ), row=1, col=1)
+        ), row=1, col=2)
         
+        # MOA text
         fig.add_annotation(
-            x=0.05, y=y_pos,
+            x=0.8, y=y_pos - 0.05,
             text=f"{row['MOA']}",
             showarrow=False,
-            font=dict(size=10, color='black'),
+            font=dict(size=10, color='black', family='Arial'),
             xref="paper", yref="paper",
             xanchor="left"
         )
@@ -425,29 +309,29 @@ def create_combined_chart_with_legend(data, segment_column='Category', max_segme
     # Trial Status section
     y_pos -= 0.05
     fig.add_annotation(
-        x=0.12, y=y_pos,
+        x=0.85, y=y_pos,
         text="<b>Trial Status</b>",
         showarrow=False,
-        font=dict(size=14, color='black'),
+        font=dict(size=14, color='black', family='Arial'),
         xref="paper", yref="paper"
     )
     
     y_pos -= 0.08
     fig.add_annotation(
-        x=0.02, y=y_pos,
+        x=0.77, y=y_pos,
         text="🚀 Advanced to next Phase of development",
         showarrow=False,
-        font=dict(size=10, color='green'),
+        font=dict(size=10, color='green', family='Arial'),
         xref="paper", yref="paper",
         xanchor="left"
     )
     
     y_pos -= 0.08
     fig.add_annotation(
-        x=0.02, y=y_pos,
+        x=0.77, y=y_pos,
         text="❓ Status Unknown",
         showarrow=False,
-        font=dict(size=10, color='gray'),
+        font=dict(size=10, color='gray', family='Arial'),
         xref="paper", yref="paper",
         xanchor="left"
     )
@@ -455,20 +339,25 @@ def create_combined_chart_with_legend(data, segment_column='Category', max_segme
     # Update layout
     fig.update_layout(
         polar=dict(
-            radialaxis=dict(visible=False, range=[0, 150]),
+            radialaxis=dict(visible=False, range=[0, 160]),  # Extended range for labels
             angularaxis=dict(visible=False)
         ),
         showlegend=False,
-        width=1200,
+        width=1400,  # Increased width for better spacing
         height=700,
         margin=dict(l=20, r=20, t=50, b=50),
         plot_bgcolor='white',
-        paper_bgcolor='white'
+        paper_bgcolor='white',
+        title=dict(
+            text="Asset Development Portfolio",
+            x=0.4,  # Adjust title position for radar chart
+            font=dict(size=20, family='Arial')
+        )
     )
     
-    # Hide left subplot axes
-    fig.update_xaxes(visible=False, row=1, col=1)
-    fig.update_yaxes(visible=False, row=1, col=1)
+    # Hide right subplot axes
+    fig.update_xaxes(visible=False, row=1, col=2)
+    fig.update_yaxes(visible=False, row=1, col=2)
     
     return fig
 
@@ -640,10 +529,9 @@ elif st.session_state.page_state == 'dashboard':
             st.session_state.page_state = 'landing'
             st.rerun()
     
-    # Main content area
-    st.title("Asset Development Portfolio")
+    # Main content area - removed title as it's now in the chart
     
-    # Create combined chart with legend
+    # Create combined chart with legend on the right
     combined_fig = create_combined_chart_with_legend(
         st.session_state.assets_data,
         segment_column=segment_column,
