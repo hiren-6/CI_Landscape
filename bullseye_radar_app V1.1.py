@@ -41,8 +41,8 @@ if 'moa_colors' not in st.session_state:
         'TRB selective agonist': '#424242'
     }
 
-if 'font_settings' not in st.session_state:
-    st.session_state.font_settings = {
+if 'font_settings_moa' not in st.session_state:
+    st.session_state.font_settings_moa = {
         'family': 'Arial',
         'size': 12,
         'bold': False,
@@ -50,13 +50,42 @@ if 'font_settings' not in st.session_state:
         'color': '#000000'
     }
 
+if 'font_settings_asset' not in st.session_state:
+    st.session_state.font_settings_asset = {
+        'family': 'Arial',
+        'size': 10,
+        'bold': False,
+        'italic': False,
+        'color': '#000000'
+    }
+
+if 'font_settings_category' not in st.session_state:
+    st.session_state.font_settings_category = {
+        'family': 'Arial',
+        'size': 14,
+        'bold': True,
+        'italic': False,
+        'color': '#000000'
+    }
+
+if 'circle_settings' not in st.session_state:
+    st.session_state.circle_settings = {
+        'Phase 1': {'color': 'rgba(230,230,230,0.3)', 'shadow': False},
+        'Phase 2': {'color': 'rgba(200,200,200,0.3)', 'shadow': False},
+        'Phase 3': {'color': 'rgba(170,170,170,0.3)', 'shadow': False},
+        'Marketed': {'color': 'rgba(140,140,140,0.3)', 'shadow': False}
+    }
+
+if 'asset_view' not in st.session_state:
+    st.session_state.asset_view = 'asset'  # 'asset', 'company', or 'both'
+
 def phase_to_radius(phase):
-    """Convert phase status to radius position"""
+    """Convert phase status to radius position (reversed order)"""
     mapping = {
-        'Phase 1': 25,
-        'Phase 2': 50,
-        'Phase 3': 75,
-        'Marketed': 100
+        'Marketed': 25,  # Innermost
+        'Phase 3': 50,
+        'Phase 2': 75,
+        'Phase 1': 100   # Outermost
     }
     return mapping.get(phase, 0)
 
@@ -109,7 +138,7 @@ def calculate_segment_positions(data, segment_column, max_segments=8):
     
     return angles, segment_positions
 
-def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, font_settings=None, moa_colors=None):
+def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2):
     """Create D3.js bullseye radar chart component"""
     
     # Prepare data for D3.js
@@ -118,15 +147,24 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
     # Convert data to JavaScript-friendly format
     assets_data = []
     for idx, (_, row) in enumerate(data.iterrows()):
+        # Prepare display label based on asset_view setting
+        if st.session_state.asset_view == 'asset':
+            display_label = row['Asset']
+        elif st.session_state.asset_view == 'company':
+            display_label = row['Company']
+        else:  # both
+            display_label = f"{row['Asset']} ({row['Company']})"
+            
         assets_data.append({
             'asset': row['Asset'],
             'company': row['Company'],
+            'display_label': display_label,
             'phase': row['Phase_Status'],
             'moa': row['MOA'],
             'category': row.get(segment_column, ''),
             'radius': phase_to_radius(row['Phase_Status']),
             'angle': angles[idx] if idx < len(angles) else 0,
-            'color': moa_colors.get(row['MOA'], '#808080')
+            'color': st.session_state.moa_colors.get(row['MOA'], '#808080')
         })
     
     # Convert segment info to JavaScript format
@@ -140,7 +178,7 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
     
     # Create MOA legend data
     moa_legend = []
-    for moa, color in moa_colors.items():
+    for moa, color in st.session_state.moa_colors.items():
         count = len(data[data['MOA'] == moa])
         if count > 0:
             moa_legend.append({
@@ -148,6 +186,12 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
                 'color': color,
                 'count': count
             })
+    
+    # Get font settings
+    font_moa = st.session_state.font_settings_moa
+    font_asset = st.session_state.font_settings_asset
+    font_category = st.session_state.font_settings_category
+    circle_settings = st.session_state.circle_settings
     
     # D3.js component HTML/JavaScript
     component_html = f"""
@@ -159,7 +203,7 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
             body {{
                 margin: 0;
                 padding: 20px;
-                font-family: {font_settings['family']}, sans-serif;
+                font-family: Arial, sans-serif;
                 background: white;
             }}
             .container {{
@@ -168,10 +212,10 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
                 align-items: flex-start;
             }}
             .chart-container {{
-                flex: 0 0 75%;
+                flex: 0 0 80%;
             }}
             .legend-container {{
-                flex: 0 0 20%;
+                flex: 0 0 18%;
                 margin-left: 20px;
             }}
             .tooltip {{
@@ -206,10 +250,11 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
                 border: 1px solid #ccc;
             }}
             .legend-text {{
-                font-size: {font_settings['size']}px;
-                color: {font_settings['color']};
-                font-weight: {('bold' if font_settings['bold'] else 'normal')};
-                font-style: {('italic' if font_settings['italic'] else 'normal')};
+                font-family: {font_moa['family']};
+                font-size: {font_moa['size']}px;
+                color: {font_moa['color']};
+                font-weight: {('bold' if font_moa['bold'] else 'normal')};
+                font-style: {('italic' if font_moa['italic'] else 'normal')};
             }}
             .asset-dot {{
                 cursor: pointer;
@@ -221,15 +266,22 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
             }}
             .asset-label {{
                 pointer-events: none;
-                font-size: {font_settings['size'] - 2}px;
+                font-family: {font_asset['family']};
+                font-size: {font_asset['size']}px;
+                fill: {font_asset['color']};
+                font-weight: {('bold' if font_asset['bold'] else 'normal')};
+                font-style: {('italic' if font_asset['italic'] else 'normal')};
             }}
             .segment-label {{
-                font-weight: bold;
-                font-size: {font_settings['size'] + 2}px;
+                font-family: {font_category['family']};
+                font-size: {font_category['size']}px;
+                fill: {font_category['color']};
+                font-weight: {('bold' if font_category['bold'] else 'normal')};
+                font-style: {('italic' if font_category['italic'] else 'normal')};
             }}
             .phase-label {{
                 fill: #666;
-                font-size: {font_settings['size'] - 2}px;
+                font-size: 10px;
             }}
             .export-buttons {{
                 position: absolute;
@@ -270,11 +322,12 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
             const assetsData = {json.dumps(assets_data)};
             const segmentsData = {json.dumps(segments_js)};
             const moaLegend = {json.dumps(moa_legend)};
+            const circleSettings = {json.dumps(circle_settings)};
             
-            // Chart dimensions
-            const width = 700;
-            const height = 700;
-            const margin = 80;
+            // Chart dimensions - enlarged
+            const width = 900;
+            const height = 900;
+            const margin = 120;
             const radius = Math.min(width, height) / 2 - margin;
             
             // Create SVG
@@ -288,28 +341,59 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
             // Create tooltip
             const tooltip = d3.select('.tooltip');
             
-            // Draw concentric circles (phases)
+            // Draw concentric circles (phases) - reversed order
             const phases = [
-                {{r: radius * 0.25, label: 'Phase 1', color: 'rgba(230,230,230,0.3)'}},
-                {{r: radius * 0.5, label: 'Phase 2', color: 'rgba(200,200,200,0.3)'}},
-                {{r: radius * 0.75, label: 'Phase 3', color: 'rgba(170,170,170,0.3)'}},
-                {{r: radius, label: 'Marketed', color: 'rgba(140,140,140,0.3)'}}
+                {{r: radius * 0.25, label: 'Marketed', phase: 'Marketed'}},
+                {{r: radius * 0.5, label: 'Phase 3', phase: 'Phase 3'}},
+                {{r: radius * 0.75, label: 'Phase 2', phase: 'Phase 2'}},
+                {{r: radius, label: 'Phase 1', phase: 'Phase 1'}}
             ];
             
-            // Draw phase circles
+            // Add filter for shadow if needed
+            const defs = svg.append('defs');
+            const filter = defs.append('filter')
+                .attr('id', 'shadow')
+                .attr('x', '-50%')
+                .attr('y', '-50%')
+                .attr('width', '200%')
+                .attr('height', '200%');
+            
+            filter.append('feGaussianBlur')
+                .attr('in', 'SourceAlpha')
+                .attr('stdDeviation', 3);
+            
+            filter.append('feOffset')
+                .attr('dx', 2)
+                .attr('dy', 2)
+                .attr('result', 'offsetblur');
+            
+            const feMerge = filter.append('feMerge');
+            feMerge.append('feMergeNode')
+                .attr('in', 'offsetblur');
+            feMerge.append('feMergeNode')
+                .attr('in', 'SourceGraphic');
+            
+            // Draw phase circles with custom colors
             phases.forEach((phase, i) => {{
+                const settings = circleSettings[phase.phase];
                 g.append('circle')
                     .attr('r', phase.r)
-                    .attr('fill', phase.color)
+                    .attr('fill', settings.color)
                     .attr('stroke', '#ccc')
-                    .attr('stroke-width', 1);
+                    .attr('stroke-width', 1)
+                    .attr('filter', settings.shadow ? 'url(#shadow)' : null);
                 
-                // Add phase labels
+                // Add phase labels - positioned to avoid segment lines
+                const labelAngle = Math.PI / 4; // 45 degrees to avoid overlapping with segment lines
+                const labelX = phase.r * Math.cos(labelAngle);
+                const labelY = phase.r * Math.sin(labelAngle);
+                
                 g.append('text')
                     .attr('class', 'phase-label')
-                    .attr('x', 0)
-                    .attr('y', phase.r + 15)
+                    .attr('x', labelX)
+                    .attr('y', labelY)
                     .attr('text-anchor', 'middle')
+                    .attr('dy', '0.35em')
                     .text(phase.label);
             }});
             
@@ -329,16 +413,28 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
                     .attr('stroke', '#666')
                     .attr('stroke-width', 2);
                 
-                // Add segment label
+                // Add segment label at the top
                 const midAngle = (segment.baseAngle + segment.endAngle) / 2;
-                const labelX = (radius + 30) * Math.cos(midAngle - Math.PI/2);
-                const labelY = (radius + 30) * Math.sin(midAngle - Math.PI/2);
+                const labelRadius = radius + 40;
+                const labelX = labelRadius * Math.cos(midAngle - Math.PI/2);
+                const labelY = labelRadius * Math.sin(midAngle - Math.PI/2);
+                
+                // Adjust text anchor based on position
+                let textAnchor = 'middle';
+                if (Math.abs(labelX) < 10) {{
+                    textAnchor = 'middle';
+                }} else if (labelX < 0) {{
+                    textAnchor = 'end';
+                }} else {{
+                    textAnchor = 'start';
+                }}
                 
                 g.append('text')
                     .attr('class', 'segment-label')
                     .attr('x', labelX)
                     .attr('y', labelY)
-                    .attr('text-anchor', 'middle')
+                    .attr('text-anchor', textAnchor)
+                    .attr('dy', labelY < -radius ? '1em' : '-0.5em')
                     .text(segment.name);
             }});
             
@@ -381,17 +477,18 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
                 const group = d3.select(this);
                 const dotX = d.radius * radius / 100 * Math.cos(d.angle - Math.PI/2);
                 const dotY = d.radius * radius / 100 * Math.sin(d.angle - Math.PI/2);
-                const labelX = (radius + 50) * Math.cos(d.angle - Math.PI/2);
-                const labelY = (radius + 50) * Math.sin(d.angle - Math.PI/2);
+                const labelRadius = radius + 70;
+                const labelX = labelRadius * Math.cos(d.angle - Math.PI/2);
+                const labelY = labelRadius * Math.sin(d.angle - Math.PI/2);
                 
-                // Connecting line
+                // Connecting line - lighter and thinner
                 group.append('line')
                     .attr('x1', dotX)
                     .attr('y1', dotY)
                     .attr('x2', labelX)
                     .attr('y2', labelY)
-                    .attr('stroke', d.color)
-                    .attr('stroke-width', 1)
+                    .attr('stroke', '#999')  // Lighter black
+                    .attr('stroke-width', 0.5)  // Thinner
                     .attr('opacity', 0.5);
                 
                 // Label
@@ -401,8 +498,7 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
                     .attr('y', labelY)
                     .attr('text-anchor', d.angle > Math.PI ? 'end' : 'start')
                     .attr('dy', '0.35em')
-                    .attr('fill', d.color)
-                    .text(d.asset);
+                    .text(d.display_label);
             }});
             
             // Create legend
@@ -500,7 +596,7 @@ def create_d3_bullseye_chart(data, segment_column='Category', max_segments=2, fo
     """
     
     # Return the component
-    return components.html(component_html, height=800, scrolling=False)
+    return components.html(component_html, height=950, scrolling=False)
 
 # Landing Page
 if st.session_state.page_state == 'landing':
@@ -623,37 +719,129 @@ elif st.session_state.page_state == 'dashboard':
     with st.sidebar:
         st.title("⚙️ Chart Settings")
         
-        st.subheader("Segments")
+        # 1. Segments
+        st.subheader("📊 Segments")
         segment_column = st.selectbox("Segment By:", ['Category', 'Company', 'MOA'], index=0)
         max_segments = st.slider("Max Segments:", 2, 8, 2)
         
-        st.subheader("Font Settings")
-        st.session_state.font_settings['family'] = st.selectbox(
-            "Font Family:", 
-            ['Arial', 'Times New Roman', 'Helvetica', 'Georgia', 'Courier New'],
-            index=0
-        )
-        st.session_state.font_settings['size'] = st.slider("Font Size:", 8, 20, 12)
+        st.markdown("---")
+        
+        # 2. Font Settings - MOA
+        st.subheader("🔤 Font Settings/MOA")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.font_settings_moa['family'] = st.selectbox(
+                "Font Family:", 
+                ['Arial', 'Times New Roman', 'Helvetica', 'Georgia', 'Courier New'],
+                index=0,
+                key="moa_font_family"
+            )
+        with col2:
+            st.session_state.font_settings_moa['size'] = st.slider("Font Size:", 8, 20, 12, key="moa_font_size")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.session_state.font_settings['bold'] = st.checkbox("Bold")
+            st.session_state.font_settings_moa['bold'] = st.checkbox("Bold", key="moa_bold")
         with col2:
-            st.session_state.font_settings['italic'] = st.checkbox("Italic")
+            st.session_state.font_settings_moa['italic'] = st.checkbox("Italic", key="moa_italic")
         
-        st.session_state.font_settings['color'] = st.color_picker("Font Color:", "#000000")
+        st.session_state.font_settings_moa['color'] = st.color_picker("Color:", "#000000", key="moa_color")
         
-        st.subheader("MOA Colors")
+        st.markdown("---")
+        
+        # 3. Font Settings - Asset Name
+        st.subheader("🔤 Font Settings/Asset Name")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.font_settings_asset['family'] = st.selectbox(
+                "Font Family:", 
+                ['Arial', 'Times New Roman', 'Helvetica', 'Georgia', 'Courier New'],
+                index=0,
+                key="asset_font_family"
+            )
+        with col2:
+            st.session_state.font_settings_asset['size'] = st.slider("Font Size:", 8, 20, 10, key="asset_font_size")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.font_settings_asset['bold'] = st.checkbox("Bold", key="asset_bold")
+        with col2:
+            st.session_state.font_settings_asset['italic'] = st.checkbox("Italic", key="asset_italic")
+        
+        st.session_state.font_settings_asset['color'] = st.color_picker("Color:", "#000000", key="asset_color")
+        
+        st.markdown("---")
+        
+        # 4. Font Settings - Category Name
+        st.subheader("🔤 Font Settings/Category Name")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.font_settings_category['family'] = st.selectbox(
+                "Font Family:", 
+                ['Arial', 'Times New Roman', 'Helvetica', 'Georgia', 'Courier New'],
+                index=0,
+                key="category_font_family"
+            )
+        with col2:
+            st.session_state.font_settings_category['size'] = st.slider("Font Size:", 8, 24, 14, key="category_font_size")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.font_settings_category['bold'] = st.checkbox("Bold", True, key="category_bold")
+        with col2:
+            st.session_state.font_settings_category['italic'] = st.checkbox("Italic", key="category_italic")
+        
+        st.session_state.font_settings_category['color'] = st.color_picker("Color:", "#000000", key="category_color")
+        
+        st.markdown("---")
+        
+        # 5. MOA Colors
+        st.subheader("🎨 MOA Colors")
         current_moas = st.session_state.assets_data['MOA'].unique() if 'MOA' in st.session_state.assets_data.columns else []
         
         for moa in current_moas:
             if moa in st.session_state.moa_colors:
                 new_color = st.color_picker(
-                    f"{moa[:15]}...", 
+                    f"{moa[:20]}...", 
                     st.session_state.moa_colors[moa],
                     key=f"color_{moa}"
                 )
                 st.session_state.moa_colors[moa] = new_color
+        
+        st.markdown("---")
+        
+        # 6. Edit Circle Color and Shadow
+        st.subheader("⭕ Edit Circle Color and Shadow")
+        for phase in ['Phase 1', 'Phase 2', 'Phase 3', 'Marketed']:
+            with st.expander(phase):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.session_state.circle_settings[phase]['color'] = st.color_picker(
+                        "Color", 
+                        st.session_state.circle_settings[phase]['color'],
+                        key=f"circle_color_{phase}"
+                    )
+                with col2:
+                    st.session_state.circle_settings[phase]['shadow'] = st.checkbox(
+                        "Shadow",
+                        st.session_state.circle_settings[phase]['shadow'],
+                        key=f"circle_shadow_{phase}"
+                    )
+        
+        st.markdown("---")
+        
+        # 7. Asset View
+        st.subheader("👁️ Asset View")
+        st.session_state.asset_view = st.radio(
+            "Display:",
+            options=['asset', 'company', 'both'],
+            format_func=lambda x: {
+                'asset': 'Asset Name Only',
+                'company': 'Company Name Only',
+                'both': 'Asset & Company'
+            }[x],
+            index=['asset', 'company', 'both'].index(st.session_state.asset_view)
+        )
         
         st.markdown("---")
         
@@ -677,9 +865,7 @@ elif st.session_state.page_state == 'dashboard':
     create_d3_bullseye_chart(
         st.session_state.assets_data,
         segment_column=segment_column,
-        max_segments=max_segments,
-        font_settings=st.session_state.font_settings,
-        moa_colors=st.session_state.moa_colors
+        max_segments=max_segments
     )
     
     # Add instructions
@@ -691,6 +877,12 @@ elif st.session_state.page_state == 'dashboard':
         - **Drag** to pan around when zoomed
         - **Double-click** to reset the zoom
         - Use the **Export** buttons to save as SVG or PNG
+        - **Left Panel Controls:**
+          - Segments: Choose how to group assets
+          - Font Settings: Customize text appearance for MOA, Assets, and Categories
+          - MOA Colors: Set colors for each mechanism of action
+          - Circle Settings: Customize phase circle appearance and shadows
+          - Asset View: Choose what labels to display
         """)
 
 # Edit Data Page
@@ -745,7 +937,9 @@ elif st.session_state.page_state == 'edit':
     
     with col3:
         # Download current data
-        csv_data = st.session_state.assets_data.to_csv(index=False)
+        csv_buffer = io.StringIO()
+        st.session_state.assets_data.to_csv(csv_buffer, index=False)
+        csv_data = csv_buffer.getvalue()
         
         st.download_button(
             label="📥 Download CSV",
